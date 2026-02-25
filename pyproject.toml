@@ -1,0 +1,8 @@
+[project]
+name = "numerical-calculus"
+version = "0.1.0"
+description = "Assignments for the Numerical Computing course"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy"
+]
