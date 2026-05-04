@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Assignments for the Numerical Computing course"
 requires-python = ">=3.12"
 dependencies = [
+    "matplotlib>=3.10.9",
     "numpy",
     "scipy",
     "scipy-stubs~=1.17.1",
