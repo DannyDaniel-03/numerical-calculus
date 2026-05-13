@@ -1,3 +1,10 @@
+#Shahin, Wissam, 310910401ESL231073, Wissam.shahin05@gmail.com, shukakah
+#Craciun, Daniel, 310910401ESL231020, danielcraciun72@gmail.com, donnavant
+#Estimated AI-assisted portion: 35% (prints + refinements)
+#Bibliography:
+#ChatGPT -> Mainly questions it to ask about how to think of a solution + solution to some exercises to simulate a way of solving for the algorithm
+#PDF for formulas, pseudocode snippets and explanations
+
 import numpy as np
 from pathlib import Path
 from typing import TypedDict
