@@ -1,12 +1,19 @@
+# Shahin, Wissam, 310910401ESL231073, Wissam.shahin05@gmail.com, shukakah
+# Craciun, Daniel, 310910401ESL231020, danielcraciun72@gmail.com, donnavant
+# Estimated AI-assisted portion: 35% (questions, print/output wording, and small refinements)
+# Bibliography:
+# GPT: used mainly for questions about how to approach the solution and for checking/refining explanations/prints
+# Course PDF: main source for formulas, pseudo-code, algorithms, and homework requirements
+
 import numpy as np
 
-SHOW_EXTRA = False
+SHOW_MORE = False
 
-def make_eps(power: int) -> float:
+def eps_from_t(power: int) -> float:
     return 10.0 ** (-power)
 
 # For p = n we generate a symmetric positive definite matrix because Jacobi needs symmetry, and the Cholesky sequence needs the factorization
-def build_square_matrix(size: int, seed: int | None = None) -> np.ndarray:
+def make_square_A(size: int, seed: int | None = None) -> np.ndarray:
     rng = np.random.default_rng(seed)
     raw = rng.normal(size=(size, size))
     ready = raw @ raw.T
@@ -15,7 +22,7 @@ def build_square_matrix(size: int, seed: int | None = None) -> np.ndarray:
 
 # For p > n the homework only asks for a rectangular matrix, so this is good enough, it makes sure with this small diagonal shift that the first n rows
 # help A^T A can stay invertible
-def build_tall_matrix(rows: int, cols: int, seed: int | None = None) -> np.ndarray:
+def make_tall_A(rows: int, cols: int, seed: int | None = None) -> np.ndarray:
     rng = np.random.default_rng(seed)
     ready = rng.normal(size=(rows, cols))
     for i in range(cols):
@@ -23,197 +30,165 @@ def build_tall_matrix(rows: int, cols: int, seed: int | None = None) -> np.ndarr
     return ready
 
 # This function just comes from basically homework 2 implementation
-def ldlt_steps_in_place(work: np.ndarray, eps: float) -> np.ndarray:
+def ldlt_in_place(work: np.ndarray, eps: float) -> np.ndarray:
     work = np.asarray(work, dtype=float)
     size = work.shape[0]
-    diag_bucket = np.zeros(size, dtype=float)
-
+    d_values = np.zeros(size, dtype=float)
     for col in range(size):
         carry = 0.0
         # Current Diagonal Term the d_p
         for k in range(col):
-            carry += diag_bucket[k] * work[col, k] * work[col, k]
-
-        diag_now = work[col, col] - carry
-        if abs(diag_now) <= eps:
+            carry += d_values[k] * work[col, k] * work[col, k]
+        d_now = work[col, col] - carry
+        if abs(d_now) <= eps:
             raise ValueError("Factorization stopped because a diagonal value became too small.")
-        if diag_now < 0.0:
+        if d_now < 0.0:
             raise ValueError("Factorization stopped because the matrix is not positive definite.")
-
-        diag_bucket[col] = diag_now
-
+        d_values[col] = d_now
         # Lower Entries the l_ip
         for row in range(col + 1, size):
             carry = 0.0
             for k in range(col):
-                carry += diag_bucket[k] * work[row, k] * work[col, k]
-
-            work[row, col] = (work[row, col] - carry) / diag_now
-
-    return diag_bucket
+                carry += d_values[k] * work[row, k] * work[col, k]
+            work[row, col] = (work[row, col] - carry) / d_now
+    return d_values
 
 # From the Homework 2 above function we rebuild the Cholesky lower factor that Homework 5 needs
-def recover_cholesky_lower(source: np.ndarray, eps: float) -> np.ndarray:
+def get_cholesky_l(source: np.ndarray, eps: float) -> np.ndarray:
     packed = np.array(source, dtype=float, copy=True)
-    diag_bucket = ldlt_steps_in_place(packed, eps)
+    d_values = ldlt_in_place(packed, eps)
     size = packed.shape[0]
-
     lower = np.zeros((size, size), dtype=float)
     for i in range(size):
-        lower[i, i] = np.sqrt(diag_bucket[i])
+        lower[i, i] = np.sqrt(d_values[i])
         for j in range(i):
             # This actuallt makes the diagonal for the Cholesky factor
-            lower[i, j] = packed[i, j] * np.sqrt(diag_bucket[j])
-
+            lower[i, j] = packed[i, j] * np.sqrt(d_values[j])
     return lower
 
 # It searches in the matrix for the off-diagonal entry with the largest absolute valuie (ONLY IN LOWER TRIANGULAR PART)
-def pick_biggest_outside_diagonal(board: np.ndarray) -> tuple[float, int, int]:
+def biggest_offdiag(board: np.ndarray) -> tuple[float, int, int]:
     size = board.shape[0]
     best = 0.0
-    where_i = 0
-    where_j = 0
-
+    found_i = 0
+    found_j = 0
     for i in range(1, size):
         for j in range(i):
             seen = abs(board[i, j])
             if seen > best:
                 best = seen
-                where_i = i
-                where_j = j
-
+                found_i = i
+                found_j = j
     # Best should become lower to a point it goes under the eps
-    return best, where_i, where_j
+    return best, found_i, found_j
 
 # This runs the jacobi method ONLY for the square (so basically p = n)
-def jacobi_run(start_matrix: np.ndarray, eps: float, limit: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+def run_jacobi(start_matrix: np.ndarray, eps: float, limit: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     live = np.array(start_matrix, dtype=float, copy=True)
     size = live.shape[0]
     # U=I_n
     vectors = np.eye(size, dtype=float)
-
     turns = 0
-    biggest, p, q = pick_biggest_outside_diagonal(live)
-
+    biggest, p, q = biggest_offdiag(live)
     # Continue so long the matrix is not diagonal enough
     while biggest > eps and turns <= limit:
         app = live[p, p]
         aqq = live[q, q]
         apq = live[p, q]
-
         #Rotation Parameters, given from the PDF of homework 5
         alpha = (app - aqq) / (2.0 * apq)
         sign_alpha = 1.0 if alpha >= 0.0 else -1.0
         tangent = -alpha + sign_alpha * np.sqrt(alpha * alpha + 1.0)
         cosine = 1.0 / np.sqrt(1.0 + tangent * tangent)
         sine = tangent * cosine
-
         # Updates the working matrix per loop. The jacobi update formula
         for j in range(size):
             if j == p or j == q:
                 continue
-
             old_pj = live[p, j]
             old_qj = live[q, j]
-
             live[p, j] = cosine * old_pj + sine * old_qj
             live[j, p] = live[p, j]
-
             live[q, j] = -sine * old_pj + cosine * old_qj
             live[j, q] = live[q, j]
-
         live[p, p] = app + tangent * apq
         live[q, q] = aqq - tangent * apq
         live[p, q] = 0.0
         live[q, p] = 0.0
-
         # This updates the eigenvector Matrix, basically turns rotations into vectors which becomes the matrix U
         for i in range(size):
             old_ip = vectors[i, p]
             old_iq = vectors[i, q]
             vectors[i, p] = cosine * old_ip + sine * old_iq
             vectors[i, q] = -sine * old_ip + cosine * old_iq
-
         turns += 1
-        biggest, p, q = pick_biggest_outside_diagonal(live)
-
+        biggest, p, q = biggest_offdiag(live)
     return np.diag(live).copy(), vectors, live, turns
 
 # this does the given formula from the pdf verification (||A_init@U - U @ lamba||)
-def check_jacobi_relation(InitialA: np.ndarray, lambdas: np.ndarray, vectors: np.ndarray) -> float:
-    Lambda = np.diag(lambdas)
+def jacobi_residual(start_A: np.ndarray, lambdas: np.ndarray, vectors: np.ndarray) -> float:
+    lambda_matrix = np.diag(lambdas)
     # We want it to be small
-    return float(np.linalg.norm(InitialA @ vectors - vectors @ Lambda))
+    return float(np.linalg.norm(start_A @ vectors - vectors @ lambda_matrix))
 
 # This is the second square-case sequence
-def cholesky_loop(start_matrix: np.ndarray, eps: float, limit: int) -> tuple[np.ndarray, int]:
-    old_board = np.array(start_matrix, dtype=float, copy=True)
-
-    # Each step counts a lower factor basically old_board = lower * lower^T
-    for step_count in range(1, limit + 1):
-        lower = recover_cholesky_lower(old_board, eps)
+def run_cholesky_sequence(start_matrix: np.ndarray, eps: float, limit: int) -> tuple[np.ndarray, int]:
+    last_A = np.array(start_matrix, dtype=float, copy=True)
+    # Each step counts a lower factor basically last_A = lower * lower^T
+    for step_no in range(1, limit + 1):
+        lower = get_cholesky_l(last_A, eps)
         # A^(k+1) = L^T_k L_k
-        new_board = lower.T @ lower
-
+        next_A = lower.T @ lower
         # PDF-given stopping condition
-        if np.linalg.norm(new_board - old_board) < eps:
-            return new_board, step_count
-
-        old_board = new_board
-
-    return old_board, limit
+        if np.linalg.norm(next_A - last_A) < eps:
+            return next_A, step_no
+        last_A = next_A
+    return last_A, limit
 
 # This computes onlyS what the statement asks for in the p > n branch.
-def svd_branch_values(RectA: np.ndarray, eps: float) -> dict:
+def svd_values(tall_A: np.ndarray, eps: float) -> dict:
     # A = USV^T
-    LeftU, sigma, RightVt = np.linalg.svd(RectA, full_matrices=True)
-    rows, cols = RectA.shape
-
-    hand_rank = int(np.sum(sigma > eps))
-    only_positive = sigma[sigma > eps]
-
-    if only_positive.size == 0:
-        hand_cond = np.inf
+    u_left, sigma, v_right_t = np.linalg.svd(tall_A, full_matrices=True)
+    rows, cols = tall_A.shape
+    rank_by_formula = int(np.sum(sigma > eps))
+    positive_sigmas = sigma[sigma > eps]
+    if positive_sigmas.size == 0:
+        cond_by_formula = np.inf
     else:
         #PDF formula of k_2(A)
-        hand_cond = float(np.max(sigma) / np.min(only_positive))
-
+        cond_by_formula = float(np.max(sigma) / np.min(positive_sigmas))
     # Library ones for comparison
-    lib_rank = int(np.linalg.matrix_rank(RectA))
-    lib_cond = float(np.linalg.cond(RectA))
-
+    rank_from_lib = int(np.linalg.matrix_rank(tall_A))
+    cond_from_lib = float(np.linalg.cond(tall_A))
     # Moore-Penrose pseudoinverse basically the S is built by inverting the positive SINGULAR values
-    InvS = np.zeros((cols, rows), dtype=float)
-    for i in range(hand_rank):
-        InvS[i, i] = 1.0 / sigma[i]
-
-    RightV = RightVt.T
+    s_inv = np.zeros((cols, rows), dtype=float)
+    for i in range(rank_by_formula):
+        s_inv[i, i] = 1.0 / sigma[i]
+    v_right = v_right_t.T
     # A^I = V S^I U^T
-    pseudo_moore = RightV @ InvS @ LeftU.T
-
+    pinv_moore = v_right @ s_inv @ u_left.T
     #A^T A
-    gram = RectA.T @ RectA
+    gram = tall_A.T @ tall_A
     # A^J
-    pseudo_least = np.linalg.inv(gram) @ RectA.T
-
+    pinv_normal = np.linalg.inv(gram) @ tall_A.T
     # if invertible low, if not, high.
-    norm_diff_1 = float(np.linalg.norm(pseudo_moore - pseudo_least, 1))
-
+    diff_norm_1 = float(np.linalg.norm(pinv_moore - pinv_normal, 1))
     return {
         "sigma": sigma,
-        "hand_rank": hand_rank,
-        "lib_rank": lib_rank,
-        "hand_cond": hand_cond,
-        "lib_cond": lib_cond,
-        "pseudo_moore": pseudo_moore,
-        "pseudo_least": pseudo_least,
-        "norm_diff_1": norm_diff_1,
-        "LeftU": LeftU,
-        "RightVt": RightVt,
+        "rank_by_formula": rank_by_formula,
+        "rank_from_lib": rank_from_lib,
+        "cond_by_formula": cond_by_formula,
+        "cond_from_lib": cond_from_lib,
+        "pinv_moore": pinv_moore,
+        "pinv_normal": pinv_normal,
+        "diff_norm_1": diff_norm_1,
+        "u_left": u_left,
+        "v_right_t": v_right_t,
     }
 
+# Generated by AI: full print block for the p = n output formatting.
 # These are the homework prints for p = n. -- AI generated comments
-def show_square_case(InitialA: np.ndarray,
+def print_square_output(start_A: np.ndarray,
                      lambdas: np.ndarray,
                      vectors: np.ndarray,
                      check_norm: float,
@@ -222,35 +197,28 @@ def show_square_case(InitialA: np.ndarray,
                      cholesky_steps: int) -> None:
     print()
     print("=== Case p = n ===")
-    print("InitialA =")
-    print(InitialA)
+    print("A_init =")
+    print(start_A)
     print()
-
     print("Approximate eigenvalues =")
     print(lambdas)
     print()
-
     print("Approximate eigenvectors (columns of U) =")
     print(vectors)
     print()
-
     print("||A_init * U - U * Lambda|| =")
     print(check_norm)
     print()
-
     print("Last computed matrix from the sequence A(k) =")
     print(final_board)
     print()
-
     print("Form of the last matrix:")
     print("The matrix is approximately diagonal.")
     print()
-
     print("What can be found in the last matrix:")
     print("Its diagonal values approximate the eigenvalues of the initial matrix.")
     print()
-
-    if SHOW_EXTRA:
+    if SHOW_MORE:
         print("=== Extra ===")
         print("Jacobi iterations =", jacobi_steps)
         print("Cholesky iteration steps =", cholesky_steps)
@@ -258,83 +226,70 @@ def show_square_case(InitialA: np.ndarray,
         print(np.linalg.norm(vectors.T @ vectors - np.eye(vectors.shape[0])))
         print()
 
+# Generated by AI: full print block for the p > n output formatting.
 # These are the homework prints for p > n. -- AI generated comments
-def show_tall_case(RectA: np.ndarray, pack: dict) -> None:
+def print_tall_output(tall_A: np.ndarray, pack: dict) -> None:
     print()
     print("=== Case p > n ===")
     print("A =")
-    print(RectA)
+    print(tall_A)
     print()
-
     print("Singular values of matrix A =")
     print(pack["sigma"])
     print()
-
     print("Rank of matrix A (implemented formula) =")
-    print(pack["hand_rank"])
+    print(pack["rank_by_formula"])
     print()
-
     print("Rank of matrix A (library) =")
-    print(pack["lib_rank"])
+    print(pack["rank_from_lib"])
     print()
-
     print("Conditioning number of matrix A (implemented formula) =")
-    print(pack["hand_cond"])
+    print(pack["cond_by_formula"])
     print()
-
     print("Conditioning number of matrix A (library) =")
-    print(pack["lib_cond"])
+    print(pack["cond_from_lib"])
     print()
-
     print("Moore-Penrose pseudo-inverse A^I =")
-    print(pack["pseudo_moore"])
+    print(pack["pinv_moore"])
     print()
-
     print("Least squares pseudo-inverse A^J =")
-    print(pack["pseudo_least"])
+    print(pack["pinv_normal"])
     print()
-
     print("||A^I - A^J||_1 =")
-    print(pack["norm_diff_1"])
+    print(pack["diff_norm_1"])
     print()
-
-    if SHOW_EXTRA:
+    if SHOW_MORE:
         print("=== Extra ===")
         print("U from SVD =")
-        print(pack["LeftU"])
+        print(pack["u_left"])
         print()
         print("V^T from SVD =")
-        print(pack["RightVt"])
+        print(pack["v_right_t"])
         print()
 
 # This is the full Tema 5 run.
 def main() -> None:
     np.set_printoptions(precision=10, suppress=True, linewidth=220)
-
     p = int(input("p = ").strip())
     n = int(input("n = ").strip())
     power = int(input("t for eps = 10^(-t), t = ").strip())
-    eps = make_eps(power)
+    eps = eps_from_t(power)
     limit = int(input("kmax = ").strip())
     if p < n:
         raise ValueError("The statement covers only p = n and p > n, so p must be >= n.")
-
-    seed_text = input("random seed (press Enter for default seed) = ").strip()
-    if seed_text == "":
-        seed_value = 12345
+    seed_raw = input("random seed (press Enter for default seed) = ").strip()
+    if seed_raw == "":
+        seed_no = 12345
     else:
-        seed_value = int(seed_text)
-
+        seed_no = int(seed_raw)
     # Square Case p = n
     if p == n:
-        InitialA = build_square_matrix(n, seed_value)
-
-        lambdas, vectors, _, jacobi_steps = jacobi_run(InitialA, eps, limit)
-        check_norm = check_jacobi_relation(InitialA, lambdas, vectors)
-        final_board, cholesky_steps = cholesky_loop(InitialA, eps, limit)
-
-        show_square_case(
-            InitialA=InitialA,
+        start_A = make_square_A(n, seed_no)
+        lambdas, vectors, _, jacobi_steps = run_jacobi(start_A, eps, limit)
+        check_norm = jacobi_residual(start_A, lambdas, vectors)
+        final_board, cholesky_steps = run_cholesky_sequence(start_A, eps, limit)
+        print_square_output(
+            start_A=start_A,
             lambdas=lambdas,
             vectors=vectors,
             check_norm=check_norm,
@@ -342,12 +297,11 @@ def main() -> None:
             jacobi_steps=jacobi_steps,
             cholesky_steps=cholesky_steps,
         )
-
     # Tall branch (p > n)
     else:
-        RectA = build_tall_matrix(p, n, seed_value)
-        pack = svd_branch_values(RectA, eps)
-        show_tall_case(RectA, pack)
+        tall_A = make_tall_A(p, n, seed_no)
+        pack = svd_values(tall_A, eps)
+        print_tall_output(tall_A, pack)
 
 if __name__ == "__main__":
     main()
